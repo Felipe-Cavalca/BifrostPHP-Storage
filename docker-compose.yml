@@ -1,0 +1,15 @@
+services:
+  storage:
+    build:
+      context: ./src
+      dockerfile: ./Dockerfile.dev
+    ports:
+      - "82:80"
+    volumes:
+      - ./src:/var/www/html
+      # Discos
+      - ./storage/disk1:/storage/disk1
+      - ./storage/disk2:/storage/disk2
+      - ./storage/disk3:/storage/disk3
+    mem_limit: 256m
+    cpus: '0.25'
