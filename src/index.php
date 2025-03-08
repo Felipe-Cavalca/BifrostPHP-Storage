@@ -36,6 +36,8 @@ class index
                 return $this->verifyAndFixStorage();
             case "upload":
                 return $this->upload($this->path, $this->base64Content);
+            case "download":
+                return $this->getFileBase64($this->path);
             default:
                 return ["error" => "Rota não encontrada"];
         }
@@ -96,6 +98,30 @@ class index
 
         return ["success" => true];
     }
+
+    function getFileBase64($filePath)
+    {
+        $disks = $this->getAvailableDisks();
+
+        foreach ($disks as $disk) {
+            $absolutePath = rtrim($disk, '/') . '/' . ltrim($filePath, '/');
+
+            if (file_exists($absolutePath)) {
+                $fileContent = file_get_contents($absolutePath);
+                $base64Content = base64_encode($fileContent);
+
+                return [
+                    'success' => true,
+                    'filename' => basename($filePath),
+                    'mime_type' => mime_content_type($absolutePath),
+                    'base64' => $base64Content
+                ];
+            }
+        }
+
+        return ['error' => 'Arquivo não encontrado'];
+    }
+
 
     public function verifyAndFixStorage(): array
     {
