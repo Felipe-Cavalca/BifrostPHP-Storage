@@ -35,7 +35,7 @@ class index
             case "verify":
                 return $this->verifyAndFixStorage();
             case "upload":
-                return $this->upload($this->path, $this->base64Content);
+                return $this->setFileBase64($this->path, $this->base64Content);
             case "download":
                 return $this->getFileBase64($this->path);
             default:
@@ -62,7 +62,7 @@ class index
         return $disks;
     }
 
-    public function upload($filePath, $base64Content)
+    public function setFileBase64($filePath, $base64Content)
     {
         $disks = $this->getAvailableDisks();
         if (count($disks) < 2) {
