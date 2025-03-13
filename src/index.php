@@ -2,22 +2,22 @@
 
 class index
 {
-
-    public $route;
-    public $path;
-    public $base64Content;
+    private string $pathStorage = "/disks";
+    private string $pathFiles = "/data";
+    private string $pathTrash = "/trash";
+    private string $pathLogs = "/logs";
+    private array $disks = [];
+    private int $failoverTolerance = 1;
 
     public function __construct()
     {
-        $this->route = $_GET["route"] ?? "";
-        $data = json_decode(file_get_contents("php://input"), true);
-        $this->path = $data["path"] ?? "";
-        $this->base64Content = $data["base64Content"] ?? "";
+        $this->disks = $this->getAvailableDisks();
     }
 
     public function __toString()
     {
-        return $this->handleResponse($this->runScript($this->route));
+        header("Content-Type: application/json");
+        return $this->handleResponse($this->runScript());
     }
 
     private function handleResponse(mixed $return): string
@@ -29,23 +29,40 @@ class index
         }
     }
 
-    private function runScript(string $route): mixed
+    private function runScript(): mixed
     {
-        switch ($route) {
-            case "verify":
-                return $this->verifyAndFixStorage();
-            case "upload":
-                return $this->setFileBase64($this->path, $this->base64Content);
-            case "download":
-                return $this->getFileBase64($this->path);
-            default:
-                return ["error" => "Rota não encontrada"];
+        try {
+            switch ($_SERVER["REQUEST_METHOD"]) {
+                case "GET":
+                    return $this->getFileBase64($_GET["file"]);
+                case "POST":
+                    $data = json_decode(file_get_contents("php://input"), true);
+                    return $this->setFileBase64($_GET["file"], $data["base64Content"]);
+                case "DELETE":
+                    return $this->deleteFile($_GET["file"]);
+                default:
+                    return [
+                        "status" => false,
+                        "message" => "Método não suportado"
+                    ];
+            }
+        } catch (Exception $e) {
+            return [
+                "status" => false,
+                "message" => "Erro interno",
+                "details" => $e->getMessage()
+            ];
         }
     }
 
-    private function getAvailableDisks()
+    /**
+     * Retorna os discos disponíveis para armazenamento
+     * - Discos são diretórios dentro de $pathStorage
+     * @return array
+     */
+    private function getAvailableDisks(): array
     {
-        $storagePath = "/storage"; // Diretório base do storage
+        $storagePath = $this->pathStorage;
         $disks = [];
 
         if (is_dir($storagePath)) {
@@ -62,66 +79,194 @@ class index
         return $disks;
     }
 
-    public function setFileBase64($filePath, $base64Content)
+    /**
+     * Retorna os discos disponíveis para armazenamento, ordenados pelo espaço livre.
+     * - Se $fileSize for passado, remove discos que não têm espaço suficiente.
+     * - Discos com mais de 70% de ocupação perdem prioridade.
+     *
+     * @param int|null $fileSize Tamanho do arquivo em bytes (opcional)
+     * @return array Lista de discos ordenados do melhor para o pior
+     */
+    private function getBestsDisks(?int $fileSize = null): array
     {
-        $disks = $this->getAvailableDisks();
-        if (count($disks) < 2) {
-            return ["error" => "É necessário pelo menos dois discos disponíveis"];
+        $disks = $this->disks;
+        $highPriority = [];
+        $lowPriority = [];
+
+        foreach ($disks as $disk) {
+            $totalSpace = disk_total_space($disk);
+            $freeSpace = disk_free_space($disk);
+            $usagePercentage = 100 - (($freeSpace / $totalSpace) * 100);
+
+            // Se o tamanho do arquivo foi passado, remove discos sem espaço suficiente
+            if ($fileSize !== null && $freeSpace < $fileSize) {
+                continue;
+            }
+
+            $diskData = [
+                "disk" => $disk,
+                "free_space" => $freeSpace,
+                "usage_percentage" => $usagePercentage
+            ];
+
+            // Se a ocupação for menor que 70%, dá prioridade
+            if ($usagePercentage < 70) {
+                $highPriority[] = $diskData;
+            } else {
+                $lowPriority[] = $diskData;
+            }
         }
 
-        // Seleciona os dois discos com mais espaço disponível
-        usort($disks, function ($a, $b) {
-            return disk_free_space($b) <=> disk_free_space($a);
+        // Ordena ambas as listas pelo espaço livre (maior para menor)
+        usort($highPriority, function ($a, $b) {
+            return $b["free_space"] <=> $a["free_space"];
         });
 
-        $primaryDisk = $disks[0];
-        $secondaryDisk = $disks[1];
+        usort($lowPriority, function ($a, $b) {
+            return $b["free_space"] <=> $a["free_space"];
+        });
 
-        $absolutePath1 = rtrim($primaryDisk, "/") . "/" . ltrim($filePath, "/");
-        $absolutePath2 = rtrim($secondaryDisk, "/") . "/" . ltrim($filePath, "/");
+        return array_merge($highPriority, $lowPriority);
+    }
 
-        foreach ([$absolutePath1, $absolutePath2] as $path) {
-            $directory = dirname($path);
+    public function setFileBase64(string $filePath, string $base64Content): array
+    {
+        $fileSize = strlen(base64_decode($base64Content)); // Obtém o tamanho do arquivo em bytes
+
+        $disks = $this->getBestsDisks($fileSize);
+
+        if (count($disks) < ($this->failoverTolerance + 1)) {
+            return [
+                "status" => false,
+                "message" => "Não há discos suficientes com espaço disponível para garantir redundância",
+                "details" => "Tente novamente com um arquivo menor ou adicione mais discos"
+            ];
+        }
+
+        // Seleciona a quantidade correta de discos conforme a tolerância de falha
+        $selectedDisks = array_slice($disks, 0, $this->failoverTolerance + 1);
+
+        // Decodifica o arquivo apenas uma vez
+        $decodedFile = base64_decode($base64Content);
+        if ($decodedFile === false) {
+            return [
+                "status" => false,
+                "message" => "Falha ao decodificar Base64",
+                "details" => "Verifique se o conteúdo está em Base64 válido"
+            ];
+        }
+
+        foreach ($selectedDisks as $disk) {
+            $absolutePath = rtrim($disk["disk"], "/") . "/" . ltrim($filePath, "/");
+            $directory = dirname($absolutePath);
+
             if (!is_dir($directory)) {
                 mkdir($directory, 0777, true);
             }
 
-            $decodedFile = base64_decode($base64Content);
-            if ($decodedFile === false) {
-                return ["error" => "Falha ao decodificar Base64"];
-            }
-
-            if (file_put_contents($path, $decodedFile) === false) {
-                return ["error" => "Erro ao salvar o arquivo"];
-            }
-        }
-
-        return ["success" => true];
-    }
-
-    function getFileBase64($filePath)
-    {
-        $disks = $this->getAvailableDisks();
-
-        foreach ($disks as $disk) {
-            $absolutePath = rtrim($disk, '/') . '/' . ltrim($filePath, '/');
-
-            if (file_exists($absolutePath)) {
-                $fileContent = file_get_contents($absolutePath);
-                $base64Content = base64_encode($fileContent);
-
+            if (file_put_contents($absolutePath, $decodedFile) === false) {
                 return [
-                    'success' => true,
-                    'filename' => basename($filePath),
-                    'mime_type' => mime_content_type($absolutePath),
-                    'base64' => $base64Content
+                    "status" => false,
+                    "message" => "Erro ao salvar o arquivo em $absolutePath",
+                    "details" => "Verifique as permissões de escrita no disco"
                 ];
             }
         }
 
-        return ['error' => 'Arquivo não encontrado'];
+        return [
+            "status" => true,
+            "message" => "Arquivo salvo com sucesso",
+            "locations" => array_column($selectedDisks, "disk")
+        ];
     }
 
+    public function getFileBase64(string $filePath): array
+    {
+        $disks = $this->disks;
+        $availableDisks = [];
+
+        foreach ($disks as $disk) {
+            $absolutePath = rtrim($disk, "/") . "/" . ltrim($filePath, "/");
+            if (file_exists($absolutePath)) {
+                $availableDisks[] = $absolutePath;
+            }
+        }
+
+        if (empty($availableDisks)) {
+            return [
+                "status" => false,
+                "message" => "Arquivo não encontrado",
+                "details" => ["filename" => basename($filePath)]
+            ];
+        }
+
+        $selectedPath = $availableDisks[array_rand($availableDisks)]; // Escolhe um disco aleatoriamente
+
+        $inputStream = fopen($selectedPath, "rb");
+        if (!$inputStream) {
+            return [
+                "status" => false,
+                "message" => "Erro ao abrir o arquivo"
+            ];
+        }
+
+        $outputStream = fopen("php://temp", "wb+"); // Usa a memória RAM para leitura rápida
+
+        // **Lê e transfere os dados de forma eficiente**
+        stream_copy_to_stream($inputStream, $outputStream);
+        rewind($outputStream); // Volta ao início da memória para leitura
+
+        $fileContent = stream_get_contents($outputStream);
+        fclose($inputStream);
+        fclose($outputStream);
+
+        $base64Content = base64_encode($fileContent);
+
+        return [
+            "status" => true,
+            "message" => "Arquivo encontrado",
+            "details" => [
+                "filename" => basename($filePath),
+                "mime_type" => mime_content_type($selectedPath),
+                "base64_full" => "data:" . mime_content_type($selectedPath) . ";base64," . $base64Content
+            ]
+        ];
+    }
+
+    public function deleteFile(string $filePath): array
+    {
+        $disks = $this->disks;
+        $found = false;
+
+        foreach ($disks as $disk) {
+            $absolutePath = rtrim($disk, "/") . "/" . ltrim($filePath, "/");
+
+            if (file_exists($absolutePath)) {
+                if (unlink($absolutePath)) {
+                    $found = true;
+                } else {
+                    return ["status" => false, "message" => "Erro ao excluir o arquivo em $absolutePath"];
+                }
+            }
+        }
+
+        return $found ? ["status" => true, "message" => "Arquivo excluído com sucesso"] : ["status" => false, "message" => "Arquivo não encontrado"];
+    }
+
+    public function moveToTrash(string $filePath): array
+    {
+        $trashPath = "trash/" . basename($filePath);
+
+        // Salva uma cópia do arquivo na lixeira
+        $saveResult = $this->setFileBase64($trashPath, $this->getFileBase64($filePath)["details"]["base64_full"]);
+
+        if (!$saveResult["success"]) {
+            return ["status" => false, "message" => "Erro ao mover para a lixeira"];
+        }
+
+        // Depois que a cópia for feita, exclui o original
+        return $this->deleteFile($filePath);
+    }
 
     public function verifyAndFixStorage(): array
     {
@@ -132,7 +277,7 @@ class index
         foreach ($disks as $disk) {
             $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($disk, RecursiveDirectoryIterator::SKIP_DOTS));
             foreach ($iterator as $file) {
-                $relativePath = str_replace($disk . '/', '', $file->getPathname());
+                $relativePath = str_replace($disk . "/", "", $file->getPathname());
                 $fileLocations[$relativePath][] = $disk;
             }
         }
@@ -151,8 +296,8 @@ class index
 
                 if (!empty($targetDisks)) {
                     $newDisk = $targetDisks[0];
-                    $sourcePath = $sourceDisk . '/' . $file;
-                    $targetPath = $newDisk . '/' . $file;
+                    $sourcePath = $sourceDisk . "/" . $file;
+                    $targetPath = $newDisk . "/" . $file;
 
                     if (!is_dir(dirname($targetPath))) {
                         mkdir(dirname($targetPath), 0777, true);
@@ -164,12 +309,29 @@ class index
                 // Arquivo existe em mais de dois discos → Remover cópias extras
                 while (count($locations) > 2) {
                     $diskToRemove = array_pop($locations);
-                    unlink($diskToRemove . '/' . $file);
+                    unlink($diskToRemove . "/" . $file);
                 }
             }
         }
 
         return ["success" => true];
+    }
+
+    public function cleanTrash()
+    {
+        foreach ($this->disks as $disk) {
+            $trashPath = rtrim($disk, "/") . "/trash/";
+
+            if (is_dir($trashPath)) {
+                foreach (scandir($trashPath) as $file) {
+                    if ($file !== "." && $file !== "..") {
+                        unlink($trashPath . $file);
+                    }
+                }
+            }
+        }
+
+        return ["status" => true, "message" => "Lixeira limpa em todos os discos"];
     }
 }
 

@@ -8,8 +8,8 @@ services:
     volumes:
       - ./src:/var/www/html
       # Discos
-      - ./storage/disk1:/storage/disk1
-      - ./storage/disk2:/storage/disk2
-      - ./storage/disk3:/storage/disk3
+      - ./storage/disk1:/disks/disk1
+      - ./storage/disk2:/disks/disk2
+      - ./storage/disk3:/disks/disk3
     mem_limit: 256m
     cpus: '0.25'
