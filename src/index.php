@@ -87,7 +87,7 @@ class index
      * @param int|null $fileSize Tamanho do arquivo em bytes (opcional)
      * @return array Lista de discos ordenados do melhor para o pior
      */
-    private function getBestsDisks(?int $fileSize = null): array
+    private function getBestsDisks(int|null $fileSize = null): array
     {
         $disks = $this->disks;
         $highPriority = [];
