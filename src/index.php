@@ -57,6 +57,13 @@ class index
         }
     }
 
+    /**
+     * Manipula a resposta da API
+     * - Se o retorno for um array, converte para JSON
+     * - Se for outro tipo, converte para string
+     * @param mixed $return Retorno da API
+     * @return string Resposta formatada
+     */
     private function handleResponse(mixed $return): string
     {
         if (is_array($return)) {
@@ -66,6 +73,10 @@ class index
         }
     }
 
+    /**
+     * Executa o script conforme o método HTTP
+     * @return mixed Retorno da execução
+     */
     private function runScript(): mixed
     {
         try {
@@ -92,6 +103,10 @@ class index
         }
     }
 
+    /**
+     * Verifica se o token de autorização é válido
+     * @return array Status da verificação
+     */
     private function verifyToken()
     {
         $headers = getallheaders();
@@ -124,7 +139,6 @@ class index
             "details" => "Token inválido"
         ];
     }
-
 
     /**
      * Retorna os discos disponíveis para armazenamento
@@ -225,6 +239,14 @@ class index
         return false;
     }
 
+    /**
+     * Salva um arquivo em vários discos para redundância
+     * - Se não houver discos suficientes, retorna uma mensagem de erro
+     * - Se o arquivo não puder ser salvo, retorna uma mensagem de erro
+     * @param string $filePath Caminho do arquivo
+     * @param string $base64Content Conteúdo do arquivo em Base64
+     * @return array Status da operação
+     */
     public function setFileBase64(string $filePath, string $base64Content): array
     {
         $fileSize = strlen(base64_decode($base64Content)); // Obtém o tamanho do arquivo em bytes
@@ -276,6 +298,12 @@ class index
         ];
     }
 
+    /**
+     * Retorna o conteúdo de um arquivo em Base64
+     * - Se o arquivo não for encontrado, retorna uma mensagem de erro
+     * @param string $filePath Caminho do arquivo
+     * @return array Status da operação
+     */
     public function getFileBase64(string $filePath): array
     {
         $disks = $this->disks;
@@ -329,6 +357,13 @@ class index
         ];
     }
 
+    /**
+     * Exclui um arquivo de todos os discos
+     * - Se o arquivo não for encontrado, retorna uma mensagem de erro
+     * - Se o arquivo não puder ser excluído, retorna uma mensagem de erro
+     * @param string $filePath Caminho do arquivo
+     * @return array Status da operação
+     */
     public function deleteFile(string $filePath): array
     {
         $disks = $this->disks;
@@ -362,6 +397,13 @@ class index
         ];
     }
 
+    /**
+     * Move um arquivo para a lixeira
+     * - Se o arquivo não for encontrado, retorna uma mensagem de erro
+     * - Se o arquivo não puder ser movido, retorna uma mensagem de erro
+     * @param string $filePath Caminho do arquivo
+     * @return array Status da operação
+     */
     public function moveToTrash(string $filePath): array
     {
         $trashPath = "trash/" . basename($filePath);
@@ -377,6 +419,12 @@ class index
         return $this->deleteFile($filePath);
     }
 
+    /**
+     * Verifica e corrige a redundância de arquivos
+     * - Se um arquivo estiver em apenas um disco, copia para outro
+     * - Se um arquivo estiver em mais de dois discos, remove cópias extras
+     * @return array Status da operação
+     */
     public function verifyAndFixStorage(): array
     {
         $disks = $this->getAvailableDisks();
@@ -426,6 +474,10 @@ class index
         return ["success" => true];
     }
 
+    /**
+     * Limpa a lixeira em todos os discos
+     * @return array Status da operação
+     */
     public function cleanTrash()
     {
         foreach ($this->disks as $disk) {
