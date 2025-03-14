@@ -2,22 +2,46 @@
 
 class index
 {
-    private string $pathStorage = "/disks";
-    private string $pathFiles = "/data";
-    private string $pathTrash = "/trash";
-    private string $pathLogs = "/logs";
-    private array $disks = [];
     private int $failoverTolerance = 1;
+    private object $path;
 
     public function __construct()
     {
-        $this->disks = $this->getAvailableDisks();
+        $this->path = new class($this) {
+            public function __get($name)
+            {
+                switch ($name) {
+                    case 'disks':
+                        return getenv("DIR_DISKS") ?: "/disks";
+                    case 'storage':
+                        return getenv("DIR_STORAGE") ?: "/storage";
+                    case 'trash':
+                        return getenv("DIR_TRASH") ?: "/trash";
+                    case 'logs':
+                        return getenv("DIR_LOGS") ?: "/logs";
+                    default:
+                        return null;
+                }
+            }
+        };
     }
 
     public function __toString()
     {
         header("Content-Type: application/json");
         return $this->handleResponse($this->runScript());
+    }
+
+    public function __get($var)
+    {
+        switch ($var) {
+            case "disks":
+                return $this->getAvailableDisks();
+            case "failoverTolerance":
+                return getenv("FAILOVER_TOLERANCE") ?: $this->failoverTolerance;
+            default:
+                return $this->$var;
+        }
     }
 
     private function handleResponse(mixed $return): string
@@ -62,7 +86,7 @@ class index
      */
     private function getAvailableDisks(): array
     {
-        $storagePath = $this->pathStorage;
+        $storagePath = $this->path->disks;
         $disks = [];
 
         if (is_dir($storagePath)) {
@@ -245,12 +269,25 @@ class index
                 if (unlink($absolutePath)) {
                     $found = true;
                 } else {
-                    return ["status" => false, "message" => "Erro ao excluir o arquivo em $absolutePath"];
+                    return [
+                        "status" => false,
+                        "message" => "Erro ao excluir o arquivo em $absolutePath"
+                    ];
                 }
             }
         }
 
-        return $found ? ["status" => true, "message" => "Arquivo excluído com sucesso"] : ["status" => false, "message" => "Arquivo não encontrado"];
+        if ($found) {
+            return [
+                "status" => true,
+                "message" => "Arquivo excluído com sucesso"
+            ];
+        }
+
+        return [
+            "status" => false,
+            "message" => "Arquivo não encontrado"
+        ];
     }
 
     public function moveToTrash(string $filePath): array
