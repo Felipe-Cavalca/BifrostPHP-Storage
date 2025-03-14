@@ -153,6 +153,31 @@ class index
         return array_merge($highPriority, $lowPriority);
     }
 
+    /**
+     * Verifica se o caminho passado é válido para armazenamento
+     * - O caminho deve estar dentro de um dos diretórios de armazenamento
+     *
+     * @param string $path Caminho a ser verificado
+     * @return bool
+     */
+    private function pathIsValid(string $path): bool
+    {
+        $validPaths = [
+            $this->path->disks,
+            $this->path->storage,
+            $this->path->trash,
+            $this->path->logs
+        ];
+
+        foreach ($validPaths as $validPath) {
+            if (strpos($path, $validPath) === 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function setFileBase64(string $filePath, string $base64Content): array
     {
         $fileSize = strlen(base64_decode($base64Content)); // Obtém o tamanho do arquivo em bytes
