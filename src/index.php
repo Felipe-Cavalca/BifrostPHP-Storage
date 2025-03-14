@@ -14,13 +14,13 @@ class index
             {
                 switch ($name) {
                     case 'disks':
-                        return getenv("DIR_DISKS") ?: "/disks";
+                        return getenv("DIR_DISKS") ?: "disks";
                     case 'storage':
-                        return $this->projectName . getenv("DIR_STORAGE") ?: "/storage";
+                        return getenv("DIR_STORAGE") ?: "storage";
                     case 'trash':
-                        return $this->projectName . getenv("DIR_TRASH") ?: "/trash";
+                        return getenv("DIR_TRASH") ?: "trash";
                     case 'logs':
-                        return $this->projectName . getenv("DIR_LOGS") ?: "/logs";
+                        return getenv("DIR_LOGS") ?: "logs";
                     default:
                         return null;
                 }
@@ -48,6 +48,10 @@ class index
                 return $this->getAvailableDisks();
             case "failoverTolerance":
                 return getenv("FAILOVER_TOLERANCE") ?: $this->failoverTolerance;
+            case "storagePath":
+                return sprintf("%s/%s", $this->projectName, $this->path->storage);
+            case "trashPath":
+                return sprintf("%s/%s", $this->projectName, $this->path->trash);
             case 'storageFilePath':
                 return sprintf("%s/%s/%s", $this->projectName, $this->path->storage, $_GET["file"]);
             case 'trashFilePath':
@@ -87,7 +91,7 @@ class index
                     $data = json_decode(file_get_contents("php://input"), true);
                     return $this->setFileBase64($this->storageFilePath, $data["base64Content"]);
                 case "DELETE":
-                    return $this->deleteFile($this->storageFilePath);
+                    return $this->moveToTrash($_GET["file"]);
                 default:
                     return [
                         "status" => false,
@@ -404,19 +408,29 @@ class index
      * @param string $filePath Caminho do arquivo
      * @return array Status da operação
      */
-    public function moveToTrash(string $filePath): array
+    public function moveToTrash(string $filePathInStorage): array
     {
-        $trashPath = "trash/" . basename($filePath);
+        $fileStorage = $this->storagePath . "/" . $filePathInStorage;
+        $fileTrash = $this->trashPath . "/" . $filePathInStorage;
 
-        // Salva uma cópia do arquivo na lixeira
-        $saveResult = $this->setFileBase64($trashPath, $this->getFileBase64($filePath)["details"]["base64_full"]);
+        $file = $this->getFileBase64($fileStorage);
 
-        if (!$saveResult["success"]) {
-            return ["status" => false, "message" => "Erro ao mover para a lixeira"];
+        if (!$file["status"]) {
+            return $file;
         }
 
-        // Depois que a cópia for feita, exclui o original
-        return $this->deleteFile($filePath);
+        // Salva uma cópia do arquivo na lixeira
+        $saveResult = $this->setFileBase64($fileTrash, $this->getFileBase64($fileStorage)["details"]["base64_full"]);
+
+        if ($saveResult["status"]) {
+            // Depois que a cópia for feita, exclui o original
+            return $this->deleteFile($fileStorage);
+        }
+
+        return [
+            "status" => false,
+            "message" => "Erro ao mover para a lixeira"
+        ];
     }
 
     /**
