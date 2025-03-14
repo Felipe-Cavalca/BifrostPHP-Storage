@@ -2,7 +2,6 @@
 
 class index
 {
-    private int $failoverTolerance = 1;
     private object $path;
     private string $projectName;
 
@@ -47,7 +46,7 @@ class index
             case "disks":
                 return $this->getAvailableDisks();
             case "failoverTolerance":
-                return getenv("FAILOVER_TOLERANCE") ?: $this->failoverTolerance;
+                return getenv("FAILOVER_TOLERANCE") ?: 0;
             case "storagePath":
                 return sprintf("%s/%s", $this->projectName, $this->path->storage);
             case "trashPath":
@@ -476,59 +475,86 @@ class index
     }
 
     /**
-     * Verifica e corrige a redundância de arquivos
-     * - Se um arquivo estiver em apenas um disco, copia para outro
-     * - Se um arquivo estiver em mais de dois discos, remove cópias extras
+     * Verifica e corrige a redundância de arquivos no storage.
+     * - Se um arquivo tiver menos cópias do que o necessário, cria novas cópias nos melhores discos.
+     * - Se um arquivo tiver mais cópias do que o necessário, remove cópias extras.
+     *
      * @return array Status da operação
      */
     public function verifyAndFixStorage(): array
     {
-        $disks = $this->getAvailableDisks();
+        $disks = $this->disks;
+        $requiredCopies = $this->failoverTolerance + 1;
+
+        // Se a tolerância for maior ou igual ao número de discos, não tem como garantir redundância
+        if ($requiredCopies > count($disks)) {
+            return [
+                "status" => false,
+                "message" => "Tolerância de failover muito alta. Reduza o valor ou adicione mais discos."
+            ];
+        }
+
         $fileLocations = [];
 
         // Mapeia onde cada arquivo está
         foreach ($disks as $disk) {
             $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($disk, RecursiveDirectoryIterator::SKIP_DOTS));
             foreach ($iterator as $file) {
-                $relativePath = str_replace($disk . "/", "", $file->getPathname());
-                $fileLocations[$relativePath][] = $disk;
+                if ($file->isFile()) {
+                    $relativePath = str_replace($disk . "/", "", $file->getPathname());
+                    $fileLocations[$relativePath][] = $disk;
+                }
             }
         }
 
-        // Ajusta arquivos que estão em apenas um ou mais de dois discos
+        $fixes = [
+            "files_replicated" => 0,
+            "files_removed" => 0
+        ];
+
+        // Ajusta arquivos que estão em menos ou mais discos do que o necessário
         foreach ($fileLocations as $file => $locations) {
-            if (count($locations) == 1) {
-                // Arquivo só existe em um disco → Copiar para outro disco
+            $currentCopies = count($locations);
+
+            if ($currentCopies < $requiredCopies) {
+                // Arquivo tem menos cópias do que o necessário → Criar novas cópias
                 $sourceDisk = $locations[0];
-                $targetDisks = array_diff($disks, [$sourceDisk]);
+                $sourcePath = $sourceDisk . "/" . $file;
+                $fileSize = filesize($sourcePath); // Obtém o tamanho do arquivo
 
-                // Escolher o disco com mais espaço
-                usort($targetDisks, function ($a, $b) {
-                    return disk_free_space($b) <=> disk_free_space($a);
-                });
+                $targetDisks = array_diff($disks, $locations);
+                $bestDisks = $this->getBestsDisks($fileSize); // Usa getBestsDisks() para escolher
 
-                if (!empty($targetDisks)) {
-                    $newDisk = $targetDisks[0];
-                    $sourcePath = $sourceDisk . "/" . $file;
-                    $targetPath = $newDisk . "/" . $file;
+                foreach ($bestDisks as $diskData) {
+                    $newDisk = $diskData["disk"];
+                    if (!in_array($newDisk, $locations) && count($locations) < $requiredCopies) {
+                        $targetPath = $newDisk . "/" . $file;
 
-                    if (!is_dir(dirname($targetPath))) {
-                        mkdir(dirname($targetPath), 0777, true);
+                        if (!is_dir(dirname($targetPath))) {
+                            mkdir(dirname($targetPath), 0777, true);
+                        }
+
+                        copy($sourcePath, $targetPath);
+                        $locations[] = $newDisk;
+                        $fixes["files_replicated"]++;
                     }
-
-                    copy($sourcePath, $targetPath);
                 }
-            } elseif (count($locations) > 2) {
-                // Arquivo existe em mais de dois discos → Remover cópias extras
-                while (count($locations) > 2) {
+            } elseif ($currentCopies > $requiredCopies) {
+                // Arquivo tem mais cópias do que o necessário → Remover cópias extras
+                while (count($locations) > $requiredCopies) {
                     $diskToRemove = array_pop($locations);
                     unlink($diskToRemove . "/" . $file);
+                    $fixes["files_removed"]++;
                 }
             }
         }
 
-        return ["success" => true];
+        return [
+            "status" => true,
+            "message" => "Verificação concluída.",
+            "details" => $fixes
+        ];
     }
 }
 
-$index = new index();
+echo new index();
