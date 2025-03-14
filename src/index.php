@@ -4,9 +4,11 @@ class index
 {
     private int $failoverTolerance = 1;
     private object $path;
+    private string $projectName;
 
     public function __construct()
     {
+        header("Content-Type: application/json");
         $this->path = new class($this) {
             public function __get($name)
             {
@@ -28,8 +30,15 @@ class index
 
     public function __toString()
     {
-        header("Content-Type: application/json");
-        return $this->handleResponse($this->runScript());
+        $access = $this->verifyToken();
+
+        if ($access["status"]) {
+            $this->projectName = $access["details"]["project"];
+            return $this->handleResponse($this->runScript());
+        }
+
+        http_response_code(401);
+        return $this->handleResponse($access);
     }
 
     public function __get($var)
@@ -78,6 +87,40 @@ class index
             ];
         }
     }
+
+    private function verifyToken()
+    {
+        $headers = getallheaders();
+
+        if (!isset($headers["Authorization"])) {
+            return [
+                "status" => false,
+                "message" => "Acesso negado",
+                "details" => "Token não fornecido"
+            ];
+        }
+
+        $authHeader = $headers["Authorization"];
+
+        $token = str_replace("Bearer ", "", $authHeader);
+
+        foreach ($_ENV as $key => $value) {
+            if (strpos($key, "AUTH_") === 0 && $value === $token) {
+                return [
+                    "status" => true,
+                    "message" => "Acesso concedido",
+                    "details" => ["project" => substr($key, 5)]
+                ];
+            }
+        }
+
+        return [
+            "status" => false,
+            "message" => "Acesso negado",
+            "details" => "Token inválido"
+        ];
+    }
+
 
     /**
      * Retorna os discos disponíveis para armazenamento
