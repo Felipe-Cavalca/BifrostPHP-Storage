@@ -434,6 +434,48 @@ class index
     }
 
     /**
+     * Limpa arquivos da lixeira em todos os sistemas dentro de cada disco que estão há mais de X dias.
+     *
+     * @param int $days Número de dias antes da exclusão
+     * @return array Status da operação
+     */
+    public function cleanTrash(int $days = 30)
+    {
+        $threshold = time() - ($days * 86400); // Converte dias para segundos
+        $deletedFiles = [];
+
+        foreach ($this->disks as $disk) {
+            $systemFolders = glob(rtrim($disk, "/") . "/*", GLOB_ONLYDIR); // Lista todas as pastas de sistema
+
+            foreach ($systemFolders as $systemFolder) {
+                $trashPath = $systemFolder . "/" . $this->path->trash;
+
+                if (is_dir($trashPath)) {
+                    // **Usando iterador recursivo para percorrer todas as pastas e arquivos dentro da lixeira**
+                    $iterator = new RecursiveIteratorIterator(
+                        new RecursiveDirectoryIterator($trashPath, RecursiveDirectoryIterator::SKIP_DOTS),
+                        RecursiveIteratorIterator::CHILD_FIRST
+                    );
+
+                    foreach ($iterator as $file) {
+                        if ($file->isFile() && $file->getMTime() < $threshold) {
+                            if (unlink($file->getPathname())) {
+                                $deletedFiles[] = $file->getPathname();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return [
+            "status" => true,
+            "message" => count($deletedFiles) . " arquivos removidos da lixeira",
+            "deleted_files" => $deletedFiles
+        ];
+    }
+
+    /**
      * Verifica e corrige a redundância de arquivos
      * - Se um arquivo estiver em apenas um disco, copia para outro
      * - Se um arquivo estiver em mais de dois discos, remove cópias extras
@@ -487,27 +529,6 @@ class index
 
         return ["success" => true];
     }
-
-    /**
-     * Limpa a lixeira em todos os discos
-     * @return array Status da operação
-     */
-    public function cleanTrash()
-    {
-        foreach ($this->disks as $disk) {
-            $trashPath = rtrim($disk, "/") . "/trash/";
-
-            if (is_dir($trashPath)) {
-                foreach (scandir($trashPath) as $file) {
-                    if ($file !== "." && $file !== "..") {
-                        unlink($trashPath . $file);
-                    }
-                }
-            }
-        }
-
-        return ["status" => true, "message" => "Lixeira limpa em todos os discos"];
-    }
 }
 
-echo new index();
+$index = new index();
