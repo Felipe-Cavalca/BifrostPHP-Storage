@@ -16,11 +16,11 @@ class index
                     case 'disks':
                         return getenv("DIR_DISKS") ?: "/disks";
                     case 'storage':
-                        return getenv("DIR_STORAGE") ?: "/storage";
+                        return $this->projectName . getenv("DIR_STORAGE") ?: "/storage";
                     case 'trash':
-                        return getenv("DIR_TRASH") ?: "/trash";
+                        return $this->projectName . getenv("DIR_TRASH") ?: "/trash";
                     case 'logs':
-                        return getenv("DIR_LOGS") ?: "/logs";
+                        return $this->projectName . getenv("DIR_LOGS") ?: "/logs";
                     default:
                         return null;
                 }
@@ -48,6 +48,10 @@ class index
                 return $this->getAvailableDisks();
             case "failoverTolerance":
                 return getenv("FAILOVER_TOLERANCE") ?: $this->failoverTolerance;
+            case 'storageFilePath':
+                return sprintf("%s/%s/%s", $this->projectName, $this->path->storage, $_GET["file"]);
+            case 'trashFilePath':
+                return sprintf("%s/%s/%s", $this->projectName, $this->path->trash, $_GET["file"]);
             default:
                 return $this->$var;
         }
@@ -67,12 +71,12 @@ class index
         try {
             switch ($_SERVER["REQUEST_METHOD"]) {
                 case "GET":
-                    return $this->getFileBase64($_GET["file"]);
+                    return $this->getFileBase64($this->storageFilePath);
                 case "POST":
                     $data = json_decode(file_get_contents("php://input"), true);
-                    return $this->setFileBase64($_GET["file"], $data["base64Content"]);
+                    return $this->setFileBase64($this->storageFilePath, $data["base64Content"]);
                 case "DELETE":
-                    return $this->deleteFile($_GET["file"]);
+                    return $this->deleteFile($this->storageFilePath);
                 default:
                     return [
                         "status" => false,
