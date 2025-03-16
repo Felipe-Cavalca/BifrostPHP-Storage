@@ -13,13 +13,13 @@ class index
             {
                 switch ($name) {
                     case 'disks':
-                        return getenv("DIR_DISKS") ?: "disks";
+                        return getenv("DIR_DISKS") ?: "/disks";
                     case 'storage':
-                        return getenv("DIR_STORAGE") ?: "storage";
+                        return getenv("DIR_STORAGE") ?: "/storage";
                     case 'trash':
-                        return getenv("DIR_TRASH") ?: "trash";
+                        return getenv("DIR_TRASH") ?: "/trash";
                     case 'logs':
-                        return getenv("DIR_LOGS") ?: "logs";
+                        return getenv("DIR_LOGS") ?: "/logs";
                     default:
                         return null;
                 }
