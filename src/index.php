@@ -269,11 +269,11 @@ class index
      * @param string $base64Content Conteúdo do arquivo em Base64
      * @return array Status da operação
      */
-    public function setFileBase64(string $filePath, string $base64Content): array
+    public function setFileBase64(string $filePath, string $base64Content, string $priority = "ssd"): array
     {
         $fileSize = strlen(base64_decode($base64Content)); // Obtém o tamanho do arquivo em bytes
 
-        $disks = $this->getBestsDisks($fileSize);
+        $disks = $this->getBestsDisks($fileSize, $priority);
 
         if (count($disks) < ($this->failoverTolerance + 1)) {
             return [
@@ -438,7 +438,7 @@ class index
         }
 
         // Salva uma cópia do arquivo na lixeira
-        $saveResult = $this->setFileBase64($fileTrash, $this->getFileBase64($fileStorage)["details"]["base64_full"]);
+        $saveResult = $this->setFileBase64($fileTrash, $this->getFileBase64($fileStorage)["details"]["base64_full"], "hdd");
 
         if ($saveResult["status"]) {
             // Depois que a cópia for feita, exclui o original
