@@ -18,8 +18,35 @@ services:
     volumes:
       - ./src:/var/www/html
       # Discos
-      - ./disks/disk1:/disks/disk1
-      - ./disks/disk2:/disks/disk2
-      - ./disks/disk3:/disks/disk3
+      - ssd_disk1:/disks/ssd_disk1
+      - hdd_disk2:/disks/hdd_disk2
+      - hdd_disk3:/disks/hdd_disk3
+      - ssd_disk4:/disks/ssd_disk4
     mem_limit: 256m
     cpus: '0.25'
+
+volumes:
+  ssd_disk1:
+    driver: local
+    driver_opts:
+      type: none
+      device: ./disks/ssd_disk1
+      o: bind
+  hdd_disk2:
+    driver: local
+    driver_opts:
+      type: none
+      device: ./disks/hdd_disk2
+      o: bind
+  hdd_disk3:
+    driver: local
+    driver_opts:
+      type: none
+      device: ./disks/hdd_disk3
+      o: bind
+  ssd_disk4:
+    driver: local
+    driver_opts:
+      type: none
+      device: ./disks/ssd_disk4
+      o: bind

@@ -171,37 +171,56 @@ class index
      * Retorna os discos disponíveis para armazenamento, ordenados pelo espaço livre.
      * - Se $fileSize for passado, remove discos que não têm espaço suficiente.
      * - Discos com mais de 70% de ocupação perdem prioridade.
+     * - O parâmetro `$priority` define se o armazenamento deve priorizar SSDs ou HDDs.
      *
      * @param int|null $fileSize Tamanho do arquivo em bytes (opcional)
+     * @param string $priority Tipo de disco preferido ("ssd" ou "hdd")
      * @return array Lista de discos ordenados do melhor para o pior
      */
-    private function getBestsDisks(int|null $fileSize = null): array
+    private function getBestsDisks(int|null $fileSize = null, string $priority = "ssd"): array
     {
         $disks = $this->disks;
+        $ssds = [];
+        $hdds = [];
         $highPriority = [];
         $lowPriority = [];
 
+        // Separando os discos entre SSDs e HDDs
         foreach ($disks as $disk) {
-            $totalSpace = disk_total_space($disk);
-            $freeSpace = disk_free_space($disk);
-            $usagePercentage = 100 - (($freeSpace / $totalSpace) * 100);
-
-            // Se o tamanho do arquivo foi passado, remove discos sem espaço suficiente
-            if ($fileSize !== null && $freeSpace < $fileSize) {
-                continue;
-            }
-
-            $diskData = [
-                "disk" => $disk,
-                "free_space" => $freeSpace,
-                "usage_percentage" => $usagePercentage
-            ];
-
-            // Se a ocupação for menor que 70%, dá prioridade
-            if ($usagePercentage < 70) {
-                $highPriority[] = $diskData;
+            if (strpos($disk, "ssd") !== false) {
+                $ssds[] = $disk;
             } else {
-                $lowPriority[] = $diskData;
+                $hdds[] = $disk;
+            }
+        }
+
+        // Define a lista de prioridade com base no parâmetro
+        $preferredDisks = ($priority === "ssd") ? $ssds : $hdds;
+        $alternativeDisks = ($priority === "ssd") ? $hdds : $ssds;
+
+        foreach ([$preferredDisks, $alternativeDisks] as $diskList) {
+            foreach ($diskList as $disk) {
+                $totalSpace = disk_total_space($disk);
+                $freeSpace = disk_free_space($disk);
+                $usagePercentage = 100 - (($freeSpace / $totalSpace) * 100);
+
+                // Se o tamanho do arquivo foi passado, remove discos sem espaço suficiente
+                if ($fileSize !== null && $freeSpace < $fileSize) {
+                    continue;
+                }
+
+                $diskData = [
+                    "disk" => $disk,
+                    "free_space" => $freeSpace,
+                    "usage_percentage" => $usagePercentage
+                ];
+
+                // Se a ocupação for menor que 70%, dá prioridade
+                if ($usagePercentage < 70) {
+                    $highPriority[] = $diskData;
+                } else {
+                    $lowPriority[] = $diskData;
+                }
             }
         }
 
