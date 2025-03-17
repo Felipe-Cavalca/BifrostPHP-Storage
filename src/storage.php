@@ -262,30 +262,6 @@ class storage
         return array_merge($highPriority, $lowPriority);
     }
 
-    /**
-     * Verifica se o caminho passado é válido para armazenamento
-     * - O caminho deve estar dentro de um dos diretórios de armazenamento
-     *
-     * @param string $path Caminho a ser verificado
-     * @return bool
-     */
-    private function pathIsValid(string $path): bool
-    {
-        $validPaths = [
-            $this->path->disks,
-            $this->path->storage,
-            $this->path->trash,
-            $this->path->logs
-        ];
-
-        foreach ($validPaths as $validPath) {
-            if (strpos($path, $validPath) === 0) {
-                return true;
-            }
-        }
-
-        return false;
-    }
 
     /**
      * Salva um arquivo em vários discos para redundância
