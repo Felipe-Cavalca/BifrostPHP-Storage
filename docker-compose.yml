@@ -3,18 +3,18 @@ services:
     build:
       context: ./src
       dockerfile: ./Dockerfile.dev
+    restart: always
     ports:
       - "82:80"
     environment:
       - FAILOVER_TOLERANCE=1
 
       - DIR_DISKS=/disks
-      - DIR_STORAGE=/storage
-      - DIR_TRASH=/trash
-      - DIR_LOGS=/logs
 
       - AUTH_DOSSIER=a123456
-      - AUTH_TEST=b123456
+
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
     volumes:
       - ./src:/var/www/html
       # Discos
@@ -22,10 +22,28 @@ services:
       - hdd_disk2:/disks/hdd_disk2
       - hdd_disk3:/disks/hdd_disk3
       - ssd_disk4:/disks/ssd_disk4
+    networks:
+      - bifrost-net-storage
     mem_limit: 256m
     cpus: '0.25'
 
+  redis:
+    image: redis:alpine3.20
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_storage_data:/data
+    networks:
+      - bifrost-net-storage
+    command: redis-server --appendonly yes # Habilita persistencia de dados
+
+networks:
+  bifrost-net-storage:
+
 volumes:
+  redis_storage_data:
+    name: redis_storage_data
   ssd_disk1:
     driver: local
     driver_opts:

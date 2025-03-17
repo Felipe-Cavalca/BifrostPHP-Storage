@@ -1,1 +1,3 @@
 disks/*
+src/supervisord.log
+src/supervisord.pid
