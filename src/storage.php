@@ -262,30 +262,6 @@ class storage
         return array_merge($highPriority, $lowPriority);
     }
 
-    /**
-     * Verifica se o caminho passado é válido para armazenamento
-     * - O caminho deve estar dentro de um dos diretórios de armazenamento
-     *
-     * @param string $path Caminho a ser verificado
-     * @return bool
-     */
-    private function pathIsValid(string $path): bool
-    {
-        $validPaths = [
-            $this->path->disks,
-            $this->path->storage,
-            $this->path->trash,
-            $this->path->logs
-        ];
-
-        foreach ($validPaths as $validPath) {
-            if (strpos($path, $validPath) === 0) {
-                return true;
-            }
-        }
-
-        return false;
-    }
 
     /**
      * Salva um arquivo em vários discos para redundância
@@ -299,20 +275,6 @@ class storage
     {
         $fileSize = strlen(base64_decode($base64Content)); // Obtém o tamanho do arquivo em bytes
 
-        $disks = $this->getBestsDisks($fileSize, $priority);
-
-        if (count($disks) < ($this->failoverTolerance + 1)) {
-            return [
-                "status" => false,
-                "message" => "Não há discos suficientes com espaço disponível para garantir redundância",
-                "details" => "Tente novamente com um arquivo menor ou adicione mais discos"
-            ];
-        }
-
-        // Seleciona a quantidade correta de discos conforme a tolerância de falha
-        $selectedDisks = array_slice($disks, 0, $this->failoverTolerance + 1);
-
-        // Decodifica o arquivo apenas uma vez
         $decodedFile = base64_decode($base64Content);
         if ($decodedFile === false) {
             return [
@@ -322,21 +284,49 @@ class storage
             ];
         }
 
-        foreach ($selectedDisks as $disk) {
-            $absolutePath = rtrim($disk["disk"], "/") . "/" . ltrim($filePath, "/");
-            $directory = dirname($absolutePath);
+        $existingDisks = [];
+        $disks = $this->disks;
 
+        // Verifica onde o arquivo já existe
+        foreach ($disks as $disk) {
+            $absolutePath = rtrim($disk, "/") . "/" . ltrim($filePath, "/");
+            if (file_exists($absolutePath)) {
+                $existingDisks[] = $disk;
+            }
+        }
+
+        if (!empty($existingDisks)) {
+            // Substitui o arquivo em todos os discos onde já existe
+            foreach ($existingDisks as $disk) {
+                $absolutePath = rtrim($disk, "/") . "/" . ltrim($filePath, "/");
+                file_put_contents($absolutePath, $decodedFile);
+            }
+            return [
+                "status" => true,
+                "message" => "Arquivo atualizado com sucesso",
+                "locations" => $existingDisks
+            ];
+        }
+
+        // Caso o arquivo não exista, segue a lógica normal
+        $bestDisks = $this->getBestsDisks($fileSize, $priority);
+        if (count($bestDisks) < ($this->failoverTolerance + 1)) {
+            return [
+                "status" => false,
+                "message" => "Não há discos suficientes com espaço disponível para garantir redundância",
+                "details" => "Tente novamente com um arquivo menor ou adicione mais discos"
+            ];
+        }
+
+        $selectedDisks = array_slice($bestDisks, 0, $this->failoverTolerance + 1);
+        foreach ($selectedDisks as $diskData) {
+            $disk = $diskData["disk"];
+            $absolutePath = rtrim($disk, "/") . "/" . ltrim($filePath, "/");
+            $directory = dirname($absolutePath);
             if (!is_dir($directory)) {
                 mkdir($directory, 0777, true);
             }
-
-            if (file_put_contents($absolutePath, $decodedFile) === false) {
-                return [
-                    "status" => false,
-                    "message" => "Erro ao salvar o arquivo em $absolutePath",
-                    "details" => "Verifique as permissões de escrita no disco"
-                ];
-            }
+            file_put_contents($absolutePath, $decodedFile);
         }
 
         return [
