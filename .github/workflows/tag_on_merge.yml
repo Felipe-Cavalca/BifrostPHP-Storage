@@ -172,3 +172,25 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           manifest: .github/labels.yml
           prune: true
+
+  publish_docker_image:
+    needs: publish_release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Login no GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Construir imagem Docker
+        run: |
+          TAG=$(git describe --tags --abbrev=0)
+          docker build -t ghcr.io/${{ github.repository_owner }}/dossier:${TAG} .
+          docker tag ghcr.io/${{ github.repository_owner }}/dossier:${TAG} ghcr.io/${{ github.repository_owner }}/dossier:latest
+
+      - name: Publicar imagem no GitHub Packages
+        run: |
+          TAG=$(git describe --tags --abbrev=0)
+          docker push ghcr.io/${{ github.repository_owner }}/dossier:${TAG}
+          docker push ghcr.io/${{ github.repository_owner }}/dossier:latest
