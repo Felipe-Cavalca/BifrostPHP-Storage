@@ -188,7 +188,7 @@ jobs:
       - name: Construir e Publicar Imagem Docker
         run: |
           TAG=${GITHUB_REF_NAME}
-          REPO_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]' | sed 's|/|-|g')
+          REPO_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
 
           docker build -t ghcr.io/${REPO_NAME}:${TAG} -f src/Dockerfile src/
           docker tag ghcr.io/${REPO_NAME}:${TAG} ghcr.io/${REPO_NAME}:latest
