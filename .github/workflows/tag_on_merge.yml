@@ -186,11 +186,11 @@ jobs:
       - name: Construir imagem Docker
         run: |
           TAG=$(git describe --tags --abbrev=0)
-          docker build -t ghcr.io/${{ github.repository_owner }}/dossier:${TAG} .
-          docker tag ghcr.io/${{ github.repository_owner }}/dossier:${TAG} ghcr.io/${{ github.repository_owner }}/dossier:latest
+          docker build -t ghcr.io/${{ github.repository_owner }}/BifrostPHP-Storage:${TAG} .
+          docker tag ghcr.io/${{ github.repository_owner }}/BifrostPHP-Storage:${TAG} ghcr.io/${{ github.repository_owner }}/BifrostPHP-Storage:latest
 
       - name: Publicar imagem no GitHub Packages
         run: |
           TAG=$(git describe --tags --abbrev=0)
-          docker push ghcr.io/${{ github.repository_owner }}/dossier:${TAG}
-          docker push ghcr.io/${{ github.repository_owner }}/dossier:latest
+          docker push ghcr.io/${{ github.repository_owner }}/BifrostPHP-Storage:${TAG}
+          docker push ghcr.io/${{ github.repository_owner }}/BifrostPHP-Storage:latest
