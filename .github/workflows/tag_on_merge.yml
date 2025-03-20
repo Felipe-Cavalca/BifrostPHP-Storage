@@ -190,7 +190,7 @@ jobs:
           TAG=${GITHUB_REF_NAME}
           REPO_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]' | sed 's|/|-|g')
 
-          docker build -t ghcr.io/${REPO_NAME}:${TAG} .
+          docker build -t ghcr.io/${REPO_NAME}:${TAG} -f src/Dockerfile src/
           docker tag ghcr.io/${REPO_NAME}:${TAG} ghcr.io/${REPO_NAME}:latest
           docker push ghcr.io/${REPO_NAME}:${TAG}
           docker push ghcr.io/${REPO_NAME}:latest
