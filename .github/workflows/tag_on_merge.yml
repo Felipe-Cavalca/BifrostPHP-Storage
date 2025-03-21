@@ -174,7 +174,7 @@ jobs:
           prune: true
 
   publish_docker_image:
-    needs: publish_release
+    needs: create_tag_and_draft_release  # Pega a versão gerada no job anterior
     runs-on: ubuntu-latest
     steps:
       - name: Checkout código
@@ -187,7 +187,7 @@ jobs:
 
       - name: Construir e Publicar Imagem Docker
         run: |
-          TAG=${GITHUB_REF_NAME}
+          TAG=${{ needs.create_tag_and_draft_release.outputs.tag }}  # Usa a mesma tag da release
           REPO_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
 
           docker build -t ghcr.io/${REPO_NAME}:${TAG} -f src/Dockerfile src/
