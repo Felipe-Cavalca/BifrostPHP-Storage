@@ -1,71 +1,88 @@
-# base-repo
+# BifrostPHP-Storage
 
-[![link-repo-base](https://img.shields.io/badge/Repo-Base-blue)](./)
+- Sistema de armazenamento distribuído entre discos, pronto para rodar via Docker.
 
-[![GIT](https://img.shields.io/badge/GIT-orange)](./)
-[![MD](https://img.shields.io/badge/MD-darkblue)](./)
-[![YML](https://img.shields.io/badge/YML-darkblue)](./)
+## Como usar
 
-[![link-readme-inglês](https://img.shields.io/badge/README-English/Inglês-red)](./README.md#english)
-[![link-readme-Portugês](https://img.shields.io/badge/README-Portuguese/Portugês-green)](./README.md#português)
+1. Crie as pastas para os discos (cada pasta dentro de /disks deve representa um disco físico):
 
-## English
+2. Suba os containers com Docker Compose:
+  ```bash
+  docker-compose up -d
+  ```
 
-Base repository for my project to maintain standardization of licenses, inssues, actions, etc.
+3. Acesse a API em http://localhost:82
 
-### Useful links
+###  Arquivo docker-compose.yml
 
-* `.github`
-  * [ISSUE_TEMPLATES](.github/ISSUE_TEMPLATE/)
-    * [bug-report.md](.github/ISSUE_TEMPLATE/bug-report.md)
-    * [enhancement-request.md](.github/ISSUE_TEMPLATE/enhancement-request.md)
-  * [workflows](.github/workflows/)
-    * [merge_branch_on_release.yml](.github/workflows/merge_branch_on_release.yml)
-    * [tag_on_merge.yml](.github/workflows/tag_on_merge.yml)
-  * [CODE_OF_CONDUCT.md](.github/CODE_OF_CONDUCT.md)
-  * [CONTRIBUTING.md](.github/CONTRIBUTING.md)
-  * [FUNDING.yml](.github/FUNDING.yml)
-  * [labels.yml](.github/labels.yml)
-  * [PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md)
-  * [release-drafter.yml](.github/release-drafter.yml)
-* [.vscode](.vscode/)
-  * [extensions.json](.vscode/extensions.json)
-  * [tasks.json](.vscode/tasks.json)
-* [LICENSE](LICENSE)
-* [README.md](README.md)
-* [SECURITY.md](SECURITY.md)
+```yaml
+services:
+  redis:
+    image: redis:alpine
+    container_name: redis
+    restart: always
+    networks:
+      - bifrost-net-storage
 
-### Versions
+  bifrost-storage:
+    image: ghcr.io/felipe-cavalca/bifrostphp-storage:latest
+    container_name: bifrost-storage
+    restart: always
+    ports:
+      - "82:80"
+    environment:
+      - FAILOVER_TOLERANCE=1
+      - DIR_DISKS=/disks
+      - AUTH_SISTEM=1233
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    volumes:
+      - d:/files:/disks/ssd_1  # Todos os discos fisicos devem ser uma pasta dentro de /disks
+    networks:
+      - bifrost-net-storage
 
-[https://github.com/Felipe-Cavalca/base-repo/releases](https://github.com/Felipe-Cavalca/base-repo/releases)
+networks:
+  bifrost-net-storage:
+    driver: bridge
+```
 
-## Português
+## Autenticação
 
-Repositório base do meu projeto para manter padronização de licenças, questões, ações, etc.
+Todas as requisições precisam do cabeçalho Authorization para identificar o sistema:
+```http
+Authorization: Bearer ${AUTH}
+```
 
-### Links úteis
+## Exemplo de Uso
 
-* `.github`
-  * [ISSUE_TEMPLATES](.github/ISSUE_TEMPLATE/)
-    * [bug-report.md](.github/ISSUE_TEMPLATE/bug-report.md)
-    * [enhancement-request.md](.github/ISSUE_TEMPLATE/enhancement-request.md)
-  * [workflows](.github/workflows/)
-    * [merge_branch_on_release.yml](.github/workflows/merge_branch_on_release.yml)
-    * [tag_on_merge.yml](.github/workflows/tag_on_merge.yml)
-  * [CODE_OF_CONDUCT.md](.github/CODE_OF_CONDUCT.md)
-  * [CONTRIBUTING.md](.github/CONTRIBUTING.md)
-  * [FUNDING.yml](.github/FUNDING.yml)
-  * [labels.yml](.github/labels.yml)
-  * [PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md)
-  * [release-drafter.yml](.github/release-drafter.yml)
-* [.vscode](.vscode/)
-  * [extensions.json](.vscode/extensions.json)
-  * [tasks.json](.vscode/tasks.json)
-* [LICENSE](LICENSE)
-* [README.md](README.md)
-* [SECURITY.md](SECURITY.md)
+### Enviar um arquivo (Base64)
 
-### Versões
+```bash
+curl -X POST http://localhost:82/meus_arquivos/documento.txt \
+     -H "Authorization: Bearer ${AUTH}" \
+     -H "Content-Type: application/json" \
+     -d '{"base64Content": "c3VhIGluc3RydWNhbyBkbyBhcnF1aXZvIGVtIGJhc2U2NA=="}'
+```
+*  O caminho do arquivo (meus_arquivos/documento.txt) está na URL.
+*  O conteúdo deve ser enviado em Base64 dentro do JSON.
 
-Links para as releases do projeto:
-[https://github.com/Felipe-Cavalca/base-repo/releases](https://github.com/Felipe-Cavalca/base-repo/releases)
+
+### Baixar um arquivo
+
+```bash
+curl -X GET http://localhost:82/meus_arquivos/documento.txt \
+     -H "Authorization: Bearer ${AUTH}"
+```
+
+* O conteúdo retornado será um JSON com o arquivo em Base64.
+
+### Excluir um arquivo
+
+  ```bash
+curl -X DELETE http://localhost:82/meus_arquivos/documento.txt \
+     -H "Authorization: Bearer ${AUTH}"
+```
+
+## Licença
+
+Distribuído sob a *MIT License*.
