@@ -80,6 +80,10 @@ jobs:
               sha: context.payload.pull_request.merge_commit_sha,
             });
 
+      - name: Set Output Tag
+        id: set_tag
+        run: echo "tag=${newTag}" >> $GITHUB_ENV
+
   update_release_draft:
     needs: create_tag_and_draft_release
     runs-on: ubuntu-latest
@@ -182,12 +186,17 @@ jobs:
         with:
           fetch-depth: 0  # Obtém todo o histórico e tags
 
+      - name: Obter Última Tag
+        id: get_latest_tag
+        run: |
+          LATEST_TAG=$(git tag --sort=-v:refname | head -n 1)
+          echo "TAG=$LATEST_TAG" >> $GITHUB_ENV
+
       - name: Login no GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Construir e Publicar Imagem Docker
         run: |
-          TAG=${{ needs.create_tag_and_draft_release.outputs.tag }}  # Usa a mesma tag da release
           REPO_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
 
           docker build -t ghcr.io/${REPO_NAME}:${TAG} -f src/Dockerfile src/
