@@ -9,6 +9,7 @@ class storage
 
     public function __construct()
     {
+        ini_set('display_errors', '0');
         header("Content-Type: application/json");
         $this->path = new class($this) {
             public function __get($name)
@@ -95,6 +96,11 @@ class storage
                 case "GET":
                     return $this->getFileBase64($this->storageFilePath);
                 case "POST":
+                    $headers = getallheaders();
+                    if (isset($headers["Sync-Upload"]) && $headers["Sync-Upload"] === "true") {
+                        return $this->setFileBase64($this->storageFilePath, json_decode(file_get_contents("php://input"), true)["base64Content"]);
+                    }
+
                     $tasks = new Tasks();
                     $tasks->addToFrontOfQueue("task_queue", [
                         "action" => "setFileBase64",
