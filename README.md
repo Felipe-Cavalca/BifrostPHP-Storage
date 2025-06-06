@@ -83,6 +83,12 @@ curl -X DELETE http://localhost:82/meus_arquivos/documento.txt \
      -H "Authorization: Bearer ${AUTH}"
 ```
 
+## Otimizações de Desempenho
+
+Esta versão utiliza streams para codificação e decodificação Base64 durante a
+leitura e escrita dos arquivos. Isso reduz o uso de memória e acelera o acesso
+ao disco, principalmente para arquivos grandes.
+
 ## Licença
 
 Distribuído sob a *MIT License*.

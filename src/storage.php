@@ -279,16 +279,20 @@ class storage
      */
     public function setFileBase64(string $filePath, string $base64Content, string $priority = "ssd"): array
     {
-        $fileSize = strlen(base64_decode($base64Content)); // Obtém o tamanho do arquivo em bytes
-
-        $decodedFile = base64_decode($base64Content);
-        if ($decodedFile === false) {
-            return [
-                "status" => false,
-                "message" => "Falha ao decodificar Base64",
-                "details" => "Verifique se o conteúdo está em Base64 válido"
-            ];
+        // Remove prefixo de data URI caso exista
+        if (str_starts_with($base64Content, 'data:')) {
+            $base64Content = substr($base64Content, strpos($base64Content, ',') + 1);
         }
+
+        // Calcula o tamanho aproximado do arquivo sem decodificar todo o conteúdo
+        $padding = substr_count(substr($base64Content, -2), '=');
+        $fileSize = intdiv(strlen($base64Content) * 3, 4) - $padding;
+
+        // Prepara um stream para decodificação on-the-fly
+        $inputStream = fopen('php://temp', 'wb+');
+        fwrite($inputStream, $base64Content);
+        rewind($inputStream);
+        stream_filter_append($inputStream, 'convert.base64-decode');
 
         $existingDisks = [];
         $disks = $this->disks;
@@ -305,8 +309,14 @@ class storage
             // Substitui o arquivo em todos os discos onde já existe
             foreach ($existingDisks as $disk) {
                 $absolutePath = rtrim($disk, "/") . "/" . ltrim($filePath, "/");
-                file_put_contents($absolutePath, $decodedFile);
+                $output = fopen($absolutePath, 'wb');
+                if ($output) {
+                    stream_copy_to_stream($inputStream, $output);
+                    fclose($output);
+                    rewind($inputStream);
+                }
             }
+            fclose($inputStream);
             return [
                 "status" => true,
                 "message" => "Arquivo atualizado com sucesso",
@@ -332,8 +342,14 @@ class storage
             if (!is_dir($directory)) {
                 mkdir($directory, 0777, true);
             }
-            file_put_contents($absolutePath, $decodedFile);
+            $output = fopen($absolutePath, 'wb');
+            if ($output) {
+                stream_copy_to_stream($inputStream, $output);
+                fclose($output);
+                rewind($inputStream);
+            }
         }
+        fclose($inputStream);
 
         return [
             "status" => true,
@@ -379,16 +395,15 @@ class storage
         }
 
         $outputStream = fopen("php://temp", "wb+"); // Usa a memória RAM para leitura rápida
+        stream_filter_append($outputStream, 'convert.base64-encode');
 
-        // **Lê e transfere os dados de forma eficiente**
+        // **Lê e codifica os dados de forma eficiente**
         stream_copy_to_stream($inputStream, $outputStream);
         rewind($outputStream); // Volta ao início da memória para leitura
 
-        $fileContent = stream_get_contents($outputStream);
+        $base64Content = stream_get_contents($outputStream);
         fclose($inputStream);
         fclose($outputStream);
-
-        $base64Content = base64_encode($fileContent);
 
         return [
             "status" => true,
