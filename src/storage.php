@@ -65,7 +65,6 @@ class storage
                 return $this->$var;
         }
     }
-
     /**
      * Manipula a resposta da API
      * - Se o retorno for um array, converte para JSON
@@ -203,70 +202,134 @@ class storage
      * Retorna os discos disponíveis para armazenamento, ordenados pelo espaço livre.
      * - Se $fileSize for passado, remove discos que não têm espaço suficiente.
      * - Discos com mais de 70% de ocupação perdem prioridade.
-     * - O parâmetro `$priority` define se o armazenamento deve priorizar SSDs ou HDDs.
+     * Os discos são avaliados pelo espaço livre e carga de I/O, priorizando os mais rápidos.
      *
      * @param int|null $fileSize Tamanho do arquivo em bytes (opcional)
-     * @param string $priority Tipo de disco preferido ("ssd" ou "hdd")
      * @return array Lista de discos ordenados do melhor para o pior
      */
-    private function getBestsDisks(int|null $fileSize = null, string $priority = "ssd"): array
+    private function getBestsDisks(int|null $fileSize = null): array
     {
         $disks = $this->disks;
-        $ssds = [];
-        $hdds = [];
-        $highPriority = [];
-        $lowPriority = [];
-
-        // Separando os discos entre SSDs e HDDs
+        $diskInfo = [];
         foreach ($disks as $disk) {
-            if (strpos($disk, "ssd") !== false) {
-                $ssds[] = $disk;
-            } else {
-                $hdds[] = $disk;
+            $totalSpace = @disk_total_space($disk);
+            $freeSpace = @disk_free_space($disk);
+
+            if ($totalSpace === false || $freeSpace === false) {
+                continue;
             }
+
+            $usagePercentage = 100 - (($freeSpace / $totalSpace) * 100);
+
+            if ($fileSize !== null && $freeSpace < $fileSize) {
+                continue;
+            }
+
+            $diskInfo[] = [
+                'disk' => $disk,
+                'free_space' => $freeSpace,
+                'usage_percentage' => $usagePercentage,
+                'load' => $this->getDiskLoad($disk)
+            ];
         }
 
-        // Define a lista de prioridade com base no parâmetro
-        $preferredDisks = ($priority === "ssd") ? $ssds : $hdds;
-        $alternativeDisks = ($priority === "ssd") ? $hdds : $ssds;
-
-        foreach ([$preferredDisks, $alternativeDisks] as $diskList) {
-            foreach ($diskList as $disk) {
-                $totalSpace = disk_total_space($disk);
-                $freeSpace = disk_free_space($disk);
-                $usagePercentage = 100 - (($freeSpace / $totalSpace) * 100);
-
-                // Se o tamanho do arquivo foi passado, remove discos sem espaço suficiente
-                if ($fileSize !== null && $freeSpace < $fileSize) {
-                    continue;
-                }
-
-                $diskData = [
-                    "disk" => $disk,
-                    "free_space" => $freeSpace,
-                    "usage_percentage" => $usagePercentage
-                ];
-
-                // Se a ocupação for menor que 70%, dá prioridade
-                if ($usagePercentage < 70) {
-                    $highPriority[] = $diskData;
-                } else {
-                    $lowPriority[] = $diskData;
-                }
+        usort($diskInfo, function ($a, $b) {
+            // Primeiro: discos menos cheios (<70% ocupação)
+            $aUsage = ($a['usage_percentage'] >= 90) ? 2 : (($a['usage_percentage'] >= 70) ? 1 : 0);
+            $bUsage = ($b['usage_percentage'] >= 90) ? 2 : (($b['usage_percentage'] >= 70) ? 1 : 0);
+            if ($aUsage !== $bUsage) {
+                return $aUsage <=> $bUsage;
             }
-        }
 
-        // Ordena ambas as listas pelo espaço livre (maior para menor)
-        usort($highPriority, function ($a, $b) {
-            return $b["free_space"] <=> $a["free_space"];
+            // Segundo: menor carga de I/O
+            if ($a['load'] != $b['load']) {
+                return $a['load'] <=> $b['load'];
+            }
+
+            // Terceiro: mais espaço livre
+            return $b['free_space'] <=> $a['free_space'];
         });
 
-        usort($lowPriority, function ($a, $b) {
-            return $b["free_space"] <=> $a["free_space"];
-        });
-
-        return array_merge($highPriority, $lowPriority);
+        return $diskInfo;
     }
+
+    /**
+     * Obtém uma medida aproximada da carga de I/O de um disco.
+     * Caso as informações não estejam disponíveis, retorna 0.
+     *
+     * @param string $disk Caminho do disco (ex.: /disks/ssd1)
+     * @return float Carga de I/O aproximada
+     */
+    private function getDiskLoad(string $disk): float
+    {
+        static $lastStats = [];
+
+        // Obtém o dispositivo de bloco referente ao caminho
+        $device = trim(shell_exec('df --output=source ' . escapeshellarg($disk) . ' | tail -n 1'));
+        if (empty($device)) {
+            return 0.0;
+        }
+
+        $deviceBase = basename(preg_replace('/[0-9]+$/', '', $device));
+        $statFile = "/sys/block/{$deviceBase}/stat";
+
+        if (!file_exists($statFile)) {
+            return 0.0;
+        }
+
+        $parts = preg_split('/\s+/', trim(file_get_contents($statFile)));
+        if (count($parts) < 7) {
+            return 0.0;
+        }
+
+        $totalOps = (int)$parts[0] + (int)$parts[4];
+        $now = microtime(true);
+
+        if (isset($lastStats[$deviceBase])) {
+            $deltaOps = $totalOps - $lastStats[$deviceBase]['ops'];
+            $deltaTime = $now - $lastStats[$deviceBase]['time'];
+            $io = $deltaTime > 0 ? $deltaOps / $deltaTime : 0.0;
+        } else {
+            $io = 0.0;
+        }
+
+        $lastStats[$deviceBase] = ['ops' => $totalOps, 'time' => $now];
+
+        return $io;
+    }
+
+    /**
+     * Seleciona o melhor caminho para leitura considerando a carga do disco.
+     * Sempre prioriza o caminho que estiver mais livre e com menor uso de I/O.
+     *
+     * @param array $paths Lista de caminhos absolutos onde o arquivo existe
+     * @return string Caminho escolhido para leitura
+     */
+    private function selectBestDiskForRead(array $paths): string
+    {
+        $info = [];
+        foreach ($paths as $p) {
+            // Extrai o diretório do disco original
+            $segments = explode('/', trim($p, '/'));
+            $diskPath = '/' . $segments[0] . '/' . $segments[1];
+            $info[] = [
+                'path' => $p,
+                'disk' => $diskPath,
+                'load' => $this->getDiskLoad($diskPath)
+            ];
+        }
+
+        usort($info, function ($a, $b) {
+            if ($a['load'] != $b['load']) {
+                return $a['load'] <=> $b['load'];
+            }
+
+            return 0;
+        });
+
+        return $info[0]['path'];
+    }
+
 
 
     /**
@@ -277,7 +340,7 @@ class storage
      * @param string $base64Content Conteúdo do arquivo em Base64
      * @return array Status da operação
      */
-    public function setFileBase64(string $filePath, string $base64Content, string $priority = "ssd"): array
+    public function setFileBase64(string $filePath, string $base64Content): array
     {
         // Remove prefixo de data URI caso exista
         if (str_starts_with($base64Content, 'data:')) {
@@ -325,7 +388,7 @@ class storage
         }
 
         // Caso o arquivo não exista, segue a lógica normal
-        $bestDisks = $this->getBestsDisks($fileSize, $priority);
+        $bestDisks = $this->getBestsDisks($fileSize);
         if (count($bestDisks) < ($this->failoverTolerance + 1)) {
             return [
                 "status" => false,
@@ -384,7 +447,7 @@ class storage
             ];
         }
 
-        $selectedPath = $availableDisks[array_rand($availableDisks)]; // Escolhe um disco aleatoriamente
+        $selectedPath = $this->selectBestDiskForRead($availableDisks); // Escolhe o melhor disco para leitura
 
         $inputStream = fopen($selectedPath, "rb");
         if (!$inputStream) {
@@ -475,7 +538,7 @@ class storage
         }
 
         // Salva uma cópia do arquivo na lixeira
-        $saveResult = $this->setFileBase64($fileTrash, $this->getFileBase64($fileStorage)["details"]["base64_full"], "hdd");
+        $saveResult = $this->setFileBase64($fileTrash, $this->getFileBase64($fileStorage)["details"]["base64_full"]);
 
         if ($saveResult["status"]) {
             // Depois que a cópia for feita, exclui o original
@@ -579,7 +642,7 @@ class storage
                 $fileSize = filesize($sourcePath); // Obtém o tamanho do arquivo
 
                 $targetDisks = array_diff($disks, $locations);
-                $bestDisks = $this->getBestsDisks($fileSize, "hdd"); // Usa getBestsDisks() para escolher
+                $bestDisks = $this->getBestsDisks($fileSize); // Escolhe os discos mais rápidos
 
                 foreach ($bestDisks as $diskData) {
                     $newDisk = $diskData["disk"];
